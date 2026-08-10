@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Ambiente virtual
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env
+.env
+
+# Logs
+logs/*.log
+logs/*.log.*
+
+# Banco
+banco/*.db
+
+# Arquivos processados
+arquivos/processados/*
+arquivos/falhas/*
+arquivos/entrada/*
+
+# Excel temporario
+~$*.xlsx
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store
