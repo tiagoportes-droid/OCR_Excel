@@ -48,6 +48,23 @@ OPENAI_ENABLED: bool = _get_bool("OPENAI_ENABLED", True)
 OPENAI_INPUT_PRICE_PER_1M: float = _get_float("OPENAI_INPUT_PRICE_PER_1M", 2.50)
 OPENAI_OUTPUT_PRICE_PER_1M: float = _get_float("OPENAI_OUTPUT_PRICE_PER_1M", 10.00)
 
+# --- PaddleOCR ---
+PADDLEOCR_ENABLED: bool = _get_bool("PADDLEOCR_ENABLED", True)
+
+# --- Google Gemini ---
+GEMINI_ENABLED: bool = _get_bool("GEMINI_ENABLED", True)
+GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+# --- Qwen-VL ---
+QWEN_ENABLED: bool = _get_bool("QWEN_ENABLED", True)
+QWEN_MODEL: str = os.getenv("QWEN_MODEL", "qwen2.5vl:3b")
+QWEN_BASE_URL: str = os.getenv("QWEN_BASE_URL", "http://localhost:11434")
+
+# --- Comparador OCR ---
+OCR_REQUIRE_CONSENSUS: bool = _get_bool("OCR_REQUIRE_CONSENSUS", True)
+OCR_MIN_CONFIDENCE: float = _get_float("OCR_MIN_CONFIDENCE", 0.80)
+
 # --- Caminhos ---
 PROJECT_ROOT: Path = _PROJECT_ROOT
 EXCEL_PATH: Path = _expand_path(os.getenv("EXCEL_PATH", "Controle Financeiro Geral.xlsx"))

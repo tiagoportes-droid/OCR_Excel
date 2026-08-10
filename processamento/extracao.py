@@ -1,5 +1,6 @@
 """
-Pipeline de extracao: orquestra OpenAI, fallback OCR, pre-processamento.
+Pipeline de extracao: orquestra multi-provider OCR (OpenAI, PaddleOCR,
+Gemini, Qwen-VL), consenso, fallback e pre-processamento.
 """
 
 import time
@@ -17,6 +18,8 @@ from leitor.pdf import extrair_texto_pdf, pdf_tem_texto_digital, pdf_para_imagen
 from leitor.ocr import executar_ocr_fallback
 from processamento.preprocessamento import preprocessar_imagem
 from processamento.normalizacao import normalizar_documento_extraido
+from ocr.manager import OCRManager
+from ocr.comparator import notify_ocr_divergence
 
 
 def extrair_dados_documento(filepath: Path) -> dict[str, Any]:
@@ -164,10 +167,27 @@ def _processar_pdf(filepath: Path, resultado: dict[str, Any]) -> dict[str, Any]:
 
 
 def _processar_imagem(filepath: Path, resultado: dict[str, Any]) -> dict[str, Any]:
-    """Processa um arquivo de imagem."""
+    """Processa um arquivo de imagem usando multi-provider OCR com consenso."""
     log.info(f"Processando imagem: {filepath.name}")
 
-    if OPENAI_ENABLED:
+    # ============================================================
+    # 1. Multi-provider OCR (PaddleOCR + Gemini + Qwen-VL + OpenAI opcional)
+    # ============================================================
+    manager = OCRManager()
+    resultado_ocr = manager.analisar_imagem(filepath)
+
+    # Se detectou divergencia, notificar
+    if resultado_ocr.get("divergence"):
+        notify_ocr_divergence(str(filepath), resultado_ocr)
+
+    # Usar o texto do consenso como texto bruto
+    texto_ocr = resultado_ocr.get("final_text") or ""
+    resultado["texto_bruto"] = texto_ocr
+
+    # ============================================================
+    # 2. OpenAI Vision (OPCIONAL - nao derruba o fluxo se sem creditos)
+    # ============================================================
+    if OPENAI_ENABLED and resultado_ocr.get("success"):
         try:
             extrator = ExtratorOpenAI()
             resp = extrator.extrair_de_imagem(filepath)
@@ -179,38 +199,59 @@ def _processar_imagem(filepath: Path, resultado: dict[str, Any]) -> dict[str, An
                     "custo_estimado": resp.get("custo_estimado", 0.0),
                     "modelo": resp.get("modelo"),
                     "metodo": "openai_vision",
+                    "ocr_multi_provider": resultado_ocr,
                 })
                 return resultado
         except Exception as e:
             log.warning(f"OpenAI Vision falhou para imagem {filepath.name}: {e}")
 
-    # Fallback OCR local
+    # ============================================================
+    # 3. Se multi-provider OCR teve consenso, usar o texto
+    # ============================================================
+    if resultado_ocr.get("success") and texto_ocr.strip():
+        log.info(f"OCR multi-provider | Status: {resultado_ocr.get('status')} | Confianca: {resultado_ocr.get('confidence')}"
+                 f" | Metodo: {resultado_ocr.get('metodo_geracao', 'paddocr')}")
+
+        # Tentar extrair dados estruturados do texto do consenso
+        if OPENAI_ENABLED:
+            try:
+                extrator = ExtratorOpenAI()
+                resp = extrator.extrair_de_texto(texto_ocr)
+                if resp.get("dados"):
+                    resultado.update({
+                        "dados": resp["dados"],
+                        "tokens_entrada": resp.get("tokens_entrada", 0),
+                        "tokens_saida": resp.get("tokens_saida", 0),
+                        "custo_estimado": resp.get("custo_estimado", 0.0),
+                        "modelo": resp.get("modelo"),
+                        "metodo": "ocr_multi_provider+openai",
+                        "ocr_multi_provider": resultado_ocr,
+                    })
+                    return resultado
+            except Exception:
+                pass
+
+        # Fallback: parsear texto bruto localmente
+        resultado = _fallback_texto(texto_ocr, resultado)
+        resultado["ocr_multi_provider"] = resultado_ocr
+        if resultado["dados"]:
+            resultado["metodo"] = "ocr_multi_provider"
+            resultado["modelo"] = f"consenso({resultado_ocr.get('status')})"
+            return resultado
+
+    # ============================================================
+    # 4. Fallback ultima instancia: OCR local simples
+    # ============================================================
     if LOCAL_OCR_FALLBACK:
         img_pre = preprocessar_imagem(filepath)
-        texto_ocr = executar_ocr_fallback(img_pre)
-        resultado["texto_bruto"] = texto_ocr
+        texto_simples = executar_ocr_fallback(img_pre)
+        resultado["texto_bruto"] = texto_simples
 
-        if texto_ocr.strip():
-            # Tentar enviar texto do OCR para OpenAI
-            if OPENAI_ENABLED:
-                try:
-                    extrator = ExtratorOpenAI()
-                    resp = extrator.extrair_de_texto(texto_ocr)
-                    if resp.get("dados"):
-                        resultado.update({
-                            "dados": resp["dados"],
-                            "tokens_entrada": resp.get("tokens_entrada", 0),
-                            "tokens_saida": resp.get("tokens_saida", 0),
-                            "custo_estimado": resp.get("custo_estimado", 0.0),
-                            "modelo": resp.get("modelo"),
-                            "metodo": "ocr_fallback+openai",
-                        })
-                        return resultado
-                except Exception:
-                    pass
-
-            # Ultimo recurso: parsear texto bruto localmente
-            resultado = _fallback_texto(texto_ocr, resultado)
+        if texto_simples.strip():
+            resultado = _fallback_texto(texto_simples, resultado)
+            if resultado["dados"]:
+                resultado["metodo"] = "ocr_fallback"
+                return resultado
 
     if not resultado["dados"]:
         resultado["erro"] = "Nenhum metodo conseguiu extrair dados da imagem"
@@ -261,3 +302,25 @@ def _fallback_texto(texto: str, resultado: dict[str, Any]) -> dict[str, Any]:
         dados["tipo_documento"] = "Comprovante"
 
     if dados:
+        resultado["dados"] = dados
+        return resultado
+
+    resultado["erro"] = "Nao foi possivel extrair dados do texto"
+    return resultado
+
+
+def _limpar_temporarios(paths: list) -> None:
+    """Remove arquivos temporarios gerados durante o processamento."""
+    import os
+
+    for p in paths:
+        try:
+            if isinstance(p, (str, Path)):
+                p = Path(p)
+                if p.exists():
+                    p.unlink()
+                    log.debug(f"Temporario removido: {p}")
+        except Exception as e:
+            log.debug(f"Falha ao remover temporario {p}: {e}")
+
+

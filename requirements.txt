@@ -1,16 +1,33 @@
+# === API / Cloud ===
 openai>=1.30.0
-pydantic>=2.5.0
-python-dotenv>=1.0.0
-PyMuPDF>=1.24.0
-pdfplumber>=0.11.0
+google-genai>=1.0.0
+
+# === OCR Local ===
 paddleocr>=2.7.0
 paddlepaddle>=2.6.0
 easyocr>=1.7.0
 pytesseract>=0.3.10
 opencv-python>=4.9.0
 Pillow>=10.2.0
+
+# === Qwen-VL via Ollama (preferencial) ===
+# Nenhuma dependencia Python extra - usa HTTP API local do Ollama
+
+# === Qwen-VL via Hugging Face (opcional, pesado ~10GB) ===
+# Descomente se NAO for usar Ollama:
+# transformers>=4.45.0
+# qwen-vl-utils>=0.0.8
+# torch>=2.3.0
+
+# === Utilitarios ===
+pydantic>=2.5.0
+python-dotenv>=1.0.0
 pandas>=2.1.0
 openpyxl>=3.1.2
+PyMuPDF>=1.24.0
+pdfplumber>=0.11.0
 watchdog>=4.0.0
+
+# === Testes ===
 pytest>=8.0.0
 pytest-mock>=3.12.0
